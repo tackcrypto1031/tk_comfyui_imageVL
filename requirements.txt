@@ -1,0 +1,7 @@
+transformers
+qwen-vl-utils
+accelerate
+huggingface-hub
+torch
+torchvision
+pillow
