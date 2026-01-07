@@ -1,5 +1,7 @@
 # TK ComfyUI ImageVL
 
+[中文說明文件 (README_zh.md)](https://github.com/tackcrypto1031/tk_comfyui_imageVL/blob/main/README_zh.md)
+
 A powerful set of ComfyUI custom nodes designed for batch image processing and advanced Vision-Language Model (VLM) interrogation using the Qwen-VL family (Qwen2-VL, Qwen2.5-VL, Qwen3-VL).
 
 ![Workflow Demo](https://github.com/tackcrypto1031/tk_comfyui_imageVL/blob/main/workflow/tk_sample.png)
