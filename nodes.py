@@ -2,8 +2,10 @@
 import os
 import shutil
 import torch
+import traceback
 from transformers import AutoProcessor
 from qwen_vl_utils import process_vision_info
+import folder_paths
 from huggingface_hub import snapshot_download
 
 class TK_BatchImageLoader:
@@ -86,6 +88,7 @@ class TK_QwenVL_Interrogator:
                 "max_pixels": ("INT", {"default": 1003520, "min": 1024, "max": 99999999, "step": 1}),
                 "temperature": ("FLOAT", {"default": 0.7, "min": 0.0, "max": 1.0, "step": 0.01}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
+                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
             },
         }
 
@@ -94,7 +97,10 @@ class TK_QwenVL_Interrogator:
     FUNCTION = "interrogate"
     CATEGORY = "TK/QwenVL"
 
-    def interrogate(self, image_paths, model_id, prompt, max_new_tokens, min_pixels, max_pixels, temperature, seed):
+    def interrogate(self, image_paths, model_id, prompt, max_new_tokens, min_pixels, max_pixels, temperature, seed, save_per_image=True):
+        # Always enforce save_per_image = True to prevent data loss, even if passed otherwise (though it won't be passed from UI)
+        save_per_image = True 
+        
         # Set seed for reproducibility
         if seed is not None:
              torch.manual_seed(seed)
@@ -140,7 +146,7 @@ class TK_QwenVL_Interrogator:
 
         generated_texts = []
         filenames = []
-
+        
         for img_path in image_paths:
             # Prepare messages
             messages = [
@@ -158,44 +164,69 @@ class TK_QwenVL_Interrogator:
                 }
             ]
 
-            # Inference
-            text = self.processor.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
-            image_inputs, video_inputs = process_vision_info(messages)
-            inputs = self.processor(
-                text=[text],
-                images=image_inputs,
-                videos=video_inputs,
-                padding=True,
-                return_tensors="pt",
-            )
-            inputs = inputs.to(self.model.device)
+            try:
+                # Inference
+                text = self.processor.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=True
+                )
+                image_inputs, video_inputs = process_vision_info(messages)
+                inputs = self.processor(
+                    text=[text],
+                    images=image_inputs,
+                    videos=video_inputs,
+                    padding=True,
+                    return_tensors="pt",
+                )
+                inputs = inputs.to(self.model.device)
 
-            # Generate parameters
-            gen_kwargs = {
-                "max_new_tokens": max_new_tokens,
-                "temperature": temperature,
-                "do_sample": True if temperature > 0 else False,
-            }
-            if seed is not None and temperature > 0:
-                # Transformers generate usually takes seed via setting torch manual seed which we did top level, 
-                # but explicit passing isn't standard in generate() kwargs for all models. rely on global seed.
-                pass
+                # Generate parameters
+                gen_kwargs = {
+                    "max_new_tokens": max_new_tokens,
+                    "temperature": temperature,
+                    "do_sample": True if temperature > 0 else False,
+                }
+                
+                generated_ids = self.model.generate(**inputs, **gen_kwargs)
+                generated_ids_trimmed = [
+                    out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+                ]
+                output_text = self.processor.batch_decode(
+                    generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+                )[0]
+                
+                # Immediate saving logic
+                if save_per_image:
+                    try:
+                        # Save to image directory
+                        target_dir = os.path.dirname(img_path)
 
-            generated_ids = self.model.generate(**inputs, **gen_kwargs)
-            generated_ids_trimmed = [
-                out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
-            ]
-            output_text = self.processor.batch_decode(
-                generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
-            )[0]
+                        basename = os.path.basename(img_path)
+                        name_only = os.path.splitext(basename)[0]
+                        txt_filename = f"{name_only}.txt"
+                        save_path = os.path.join(target_dir, txt_filename)
+                        
+                        with open(save_path, "w", encoding="utf-8") as f:
+                            f.write(output_text)
+                            
+                        print(f"Saved caption to: {save_path}")
+                    except Exception as e:
+                        print(f"Error saving file {save_path}: {e}")
+                        traceback.print_exc()
+
+                generated_texts.append(output_text)
+                
+                # Extract filename for the parallel list
+                basename = os.path.basename(img_path)
+                filenames.append(basename)
+
+            except Exception as e:
+                print(f"Error processing image {img_path}: {e}")
+                traceback.print_exc()
+                generated_texts.append("") # Keep list length consistent
+                filenames.append(os.path.basename(img_path))
             
-            generated_texts.append(output_text)
-            
-            # Extract filename for the parallel list
-            basename = os.path.basename(img_path)
-            filenames.append(basename)
+            # Clear cache
+            torch.cuda.empty_cache()
 
         return (generated_texts, filenames)
 
@@ -209,7 +240,6 @@ class TK_TextSaver:
             "required": {
                 "texts": ("LIST",),
                 "filenames": ("LIST",),
-                "output_path": ("STRING", {"default": "C:/output_text"}),
             },
         }
 
@@ -218,17 +248,8 @@ class TK_TextSaver:
     CATEGORY = "TK/Text"
     OUTPUT_NODE = True
 
-    def save_texts(self, texts, filenames, output_path):
-        if not os.path.exists(output_path):
-            os.makedirs(output_path)
-
-        for text, filename in zip(texts, filenames):
-            # Replace extension with .txt
-            name_only = os.path.splitext(filename)[0]
-            txt_filename = f"{name_only}.txt"
-            save_path = os.path.join(output_path, txt_filename)
-
-            with open(save_path, "w", encoding="utf-8") as f:
-                f.write(text)
-
+    def save_texts(self, texts, filenames):
+        # Text saving is now handled by the upstream Interrogator node.
+        # This node remains for workflow compatibility but performs no action.
         return {}
+
