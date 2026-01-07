@@ -2,7 +2,7 @@
 
 A powerful set of ComfyUI custom nodes designed for batch image processing and advanced Vision-Language Model (VLM) interrogation using the Qwen-VL family (Qwen2-VL, Qwen2.5-VL, Qwen3-VL).
 
-![Workflow Demo](https://github.com/tackcrypto1031/tk_comfyui_imageVL/blob/main/workflow/sample.png)
+![Workflow Demo](https://github.com/tackcrypto1031/tk_comfyui_imageVL/blob/main/workflow/tk_sample.png)
 
 ## Features
 
