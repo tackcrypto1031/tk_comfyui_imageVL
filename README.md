@@ -9,13 +9,15 @@ A powerful set of ComfyUI custom nodes designed for batch image processing and a
 ## Features
 
 - **Batch Image Loading & Renaming**: Automatically read all images from a folder, rename them sequentially (e.g., `image_1.png`, `image_2.png`), and save them to a specified output directory.
-- **Qwen-VL Integration**: Seamless support for Qwen-VL models with automatic downloading from Hugging Face.
-    - Support for **Qwen2-VL**, **Qwen2.5-VL**, and **Qwen3-VL**.
-    - Auto-detection of model architecture.
+- **Multi-Model Support**:
+    - **Qwen-VL**: Seamless support for Qwen2-VL, Qwen2.5-VL, and Qwen3-VL models.
+    - **JoyCaption**: Integration with `fancyfeast/llama-joycaption` for high-quality, natural language captions or Stable Diffusion tags.
+- **Flexible Workflow Modes**:
+    - **Batch Processing**: Process entire directories of images with auto-saving.
+    - **Single Image**: New independent nodes (Single) to process individual images directly from your workflow.
 - **Advanced Generation Control**:
-    - Adjustable **Max New Tokens** for longer, detailed descriptions.
-    - **Resolution Control** (Min/Max Pixels) to balance performance and detail.
-    - **Temperature** and **Seed** control for reproducible results.
+    - Adjustable **Max New Tokens**, **Resolution Control**, **Temperature**, and **Seed**.
+    - **JoyCaption specific**: Control caption type ('Descriptive', 'SD Prompt'), length, and tone.
 - **Auto-Saving**: Automatically saves the generated captions as `.txt` files matching the image filenames.
 
 ## Installation
@@ -45,16 +47,39 @@ This node handles the input images.
 
 ### 2. QwenVL Interrogator (TK_QwenVL_Interrogator)
 This node analyzes the images and generates descriptions.
-- **model_id**: Select the desired Qwen-VL model from the dropdown. 
+- **model_id**: Select the desired Qwen-VL model from the dropdown (Supports Qwen2, Qwen2.5, Qwen3). 
     - *Models will be automatically downloaded to `tk_comfyui_imageVL/models` if not present.*
 - **prompt**: The instruction for the model (e.g., "Describe this image detailedly.").
 - **min_pixels / max_pixels**: Control the resolution for the vision encoder.
 - **max_new_tokens**: Maximum length of the generated text.
 - **temperature / seed**: Generation parameters.
 
-### 3. Text Saver (TK_TextSaver)
-This node saves the results.
-- **output_path**: Directory where the text files will be saved (filename matches the image).
+### 3. TK QwenVL Interrogator (Single)
+Process a single image passed directly from another node (IMAGE type).
+- **image**: Input image connection.
+- **model_id**: Select Qwen-VL model.
+- **prompt**: Instruction for the model.
+- **Returns**: STRING (generated text).
+
+### 4. TK JoyCaption Interrogator
+Batch processing node for JoyCaption models, designed for natural language captions or SD prompts.
+- **joycaption_model**: Select model (e.g., `fancyfeast/llama-joycaption-beta-one-hf-llava`).
+- **caption_type**: 
+    - `Descriptive`: Formal, natural language description.
+    - `Stable Diffusion Prompt`: Tag-based format with quality boosters.
+- **caption_length**: constrain the output length (very, short - very long).
+- **user_prompt**: Override the internal system prompt with your own instruction.
+- **cache_model**: Keep model loaded (recommended for batch).
+
+### 5. TK JoyCaption Interrogator (Single)
+Single image version of JoyCaption.
+- **image**: Input image connection.
+- **joycaption_model**: Select model.
+- **caption_type / caption_length**: Format controls.
+- **Returns**: STRING (generated text).
+
+### 6. Text Saver (TK_TextSaver)
+This node is kept for workflow compatibility. Text saving is now **handled automatically** by the Interrogator nodes (TK QwenVL Interrogator / TK JoyCaption Interrogator), which save a .txt file alongside the processed image in the `output_path`.
 
 ## Workflow Example
 

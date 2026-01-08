@@ -7,14 +7,16 @@
 ## 功能特點
 
 - **批量讀取與重新命名圖片**：自動讀取資料夾內的所有圖片，並按順序重新命名（例如：`image_1.png`, `image_2.png`），最後輸出至指定目錄。
-- **Qwen-VL 模型整合**：完美支援 Qwen-VL 模型，並具備從 Hugging Face 自動下載模型的功能。
-    - 支援 **Qwen2-VL**、**Qwen2.5-VL** 及 **Qwen3-VL**。
-    - 自動偵測模型架構。
+- **多模型支援**：
+    - **Qwen-VL**：無縫支援 Qwen2-VL、Qwen2.5-VL 及 Qwen3-VL 模型。
+    - **JoyCaption**：整合 `fancyfeast/llama-joycaption`，提供高品質的自然語言描述或 Stable Diffusion 標籤。
+- **彈性的工作流模式**：
+    - **批量處理**：自動處理並儲存整個資料夾的圖片與描述。
+    - **單張圖片**：新增獨立節點 (Single)，可直接在工作流中處理單張圖片。
 - **進階生成控制**：
-    - 可調節 **Max New Tokens** 以獲得更長、更詳細的描述。
-    - **解析度控制** (Min/Max Pixels) 以平衡效能與細節。
-    - 支援 **Temperature** (溫度) 與 **Seed** (種子) 控制，確保結果的可重複性。
-- **自動儲存**：自動將生成的提示詞儲存為 `.txt` 檔案，檔名與原始圖片完全一致。
+    - 可調節 **Max New Tokens**、**解析度控制**、**Temperature** (溫度) 與 **Seed** (種子)。
+    - **JoyCaption 專屬**：控制描述類型（描述性、SD Prompt）、長度與語氣。
+- **自動存檔**：自動將生成的提示詞儲存為 `.txt` 檔案，檔名與影像完全一致。
 
 ## 安裝說明
 
@@ -43,16 +45,39 @@
 
 ### 2. QwenVL 反推節點 (TK_QwenVL_Interrogator)
 此節點負責分析圖片並生成描述。
-- **model_id**：從下拉選單中選擇所需的 Qwen-VL 模型。
+- **model_id**：從下拉選單中選擇所需的 Qwen-VL 模型 (支援 Qwen2, Qwen2.5, Qwen3)。
     - *若本地無模型，系統將自動下載至 `tk_comfyui_imageVL/models`。*
 - **prompt**：給模型的指令（例如："請詳細描述這張圖片。"）。
 - **min_pixels / max_pixels**：控制視覺編碼器的解析度。
 - **max_new_tokens**：生成文字的最大長度。
 - **temperature / seed**：生成參數設定。
 
-### 3. 文字儲存節點 (TK_TextSaver)
-此節點負責儲存生成的結果。
-- **output_path**：文字檔案儲存目錄（檔名將與圖片匹配）。
+### 3. TK QwenVL 反推節點 (Single)
+處理從其他節點傳入的單張圖片 (IMAGE 類型)。
+- **image**：輸入圖片連接。
+- **model_id**：選擇 Qwen-VL 模型。
+- **prompt**：給模型的指令。
+- **Returns**：STRING (生成的影像描述文字)。
+
+### 4. TK JoyCaption 反推節點
+JoyCaption 模型的批量處理節點，專為自然語言描述或 SD 提示詞設計。
+- **joycaption_model**：選擇模型 (例如：`fancyfeast/llama-joycaption-beta-one-hf-llava`)。
+- **caption_type**：
+    - `Descriptive`：正式、自然語言的詳細描述。
+    - `Stable Diffusion Prompt`：以逗號分隔的標籤格式，包含品質修飾詞。
+- **caption_length**：限制輸出長度 (極短 - 極長)。
+- **user_prompt**：使用自定義指令覆蓋內建的系統指令。
+- **cache_model**：保持模型載入狀態（建議批量處理時開啟）。
+
+### 5. TK JoyCaption 反推節點 (Single)
+JoyCaption 的單張圖片版本。
+- **image**：輸入圖片連接。
+- **joycaption_model**：選擇模型。
+- **caption_type / caption_length**：格式控制。
+- **Returns**：STRING (生成的影像描述文字)。
+
+### 6. 文字儲存節點 (TK_TextSaver)
+此節點僅為工作流相容性保留。文字儲存功能現已**自動由反推節點處理** (TK QwenVL Interrogator / TK JoyCaption Interrogator)，系統會在 `output_path` 自動儲存與圖片同名的 .txt 檔案。
 
 ## 工作流範例
 
