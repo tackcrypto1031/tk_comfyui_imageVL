@@ -1,7 +1,9 @@
-transformers
+transformers>=4.45.0
 qwen-vl-utils
 accelerate
 huggingface-hub
 torch
 torchvision
 pillow
+sentencepiece
+protobuf
