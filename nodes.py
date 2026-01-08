@@ -253,3 +253,223 @@ class TK_TextSaver:
         # This node remains for workflow compatibility but performs no action.
         return {}
 
+
+class TK_JoyCaption_Interrogator:
+    def __init__(self):
+        self.model = None
+        self.processor = None
+        self.tokenizer = None
+        self.current_model_id = None
+        self.image_adapter = None
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "source_path": ("STRING", {"default": "C:/input_images"}),
+                "output_path": ("STRING", {"default": "C:/output_images"}),
+                "joycaption_model": ([
+                    "fancyfeast/llama-joycaption-beta-one-hf-llava",
+                    "fancyfeast/joy-caption-pre-alpha"
+                ], {"default": "fancyfeast/llama-joycaption-beta-one-hf-llava"}),
+                 "caption_type": ([
+                    "Descriptive",
+                    "Stable Diffusion Prompt",
+                ], {"default": "Descriptive"}),
+                "caption_length": ([
+                    "any", 
+                    "very short", 
+                    "short", 
+                    "medium-length", 
+                    "long", 
+                    "very long"
+                ], {"default": "long"}),
+                "user_prompt": ("STRING", {"default": "", "multiline": True}),
+                "max_new_tokens": ("INT", {"default": 512, "min": 1, "max": 4096}),
+                "temperature": ("FLOAT", {"default": 0.6, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "top_p": ("FLOAT", {"default": 0.9, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "top_k": ("INT", {"default": 0, "min": 0, "max": 100}),
+                "cache_model": ("BOOLEAN", {"default": True}),
+                "filename_prefix": ("STRING", {"default": "image_"}),
+            },
+        }
+
+    RETURN_TYPES = ("LIST", "LIST")
+    RETURN_NAMES = ("texts", "filenames")
+    FUNCTION = "interrogate"
+    CATEGORY = "TK/JoyCaption"
+
+    def interrogate(self, source_path, output_path, joycaption_model, caption_type, caption_length, user_prompt, max_new_tokens, temperature, top_p, top_k, cache_model, filename_prefix):
+        
+        # 1. Prepare Model
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        models_dir = os.path.join(current_dir, "models")
+        model_folder_name = joycaption_model.replace("/", "__")
+        model_path = os.path.join(models_dir, model_folder_name)
+
+        if not os.path.exists(model_path):
+            print(f"Model {joycaption_model} not found at {model_path}. Downloading...")
+            try:
+                from huggingface_hub import snapshot_download
+                snapshot_download(repo_id=joycaption_model, local_dir=model_path)
+                print(f"Model downloaded to {model_path}")
+            except Exception as e:
+                print(f"Failed to download model: {e}")
+                raise e
+
+        # Load Model (Singleton logic within instance for now, or global cache if needed across nodes)
+        if self.model is None or self.current_model_id != joycaption_model:
+            print(f"Loading model {joycaption_model}...")
+            
+            try:
+                # Import here to avoid global dependency issues if unused
+                from transformers import AutoModel, AutoProcessor, AutoTokenizer, AutoModelForCausalLM
+                
+                # Check for Beta One (LLaVA based) vs Pre-Alpha (Custom Adapter)
+                if "beta-one" in joycaption_model:
+                    # LLaVA style loading - Use AutoModelForVision2Seq for VLMs
+                    from transformers import AutoModelForVision2Seq
+                    self.model = AutoModelForVision2Seq.from_pretrained(
+                        model_path, 
+                        torch_dtype="auto", 
+                        device_map="auto",
+                        trust_remote_code=True
+                    )
+                    self.processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+                    self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+                    self.image_adapter = None # Integrated
+                else:
+                    # Pre-Alpha / Custom Adapter Logic
+                    # This path might require specific separate loading of SigLIP + Adapter + Llama
+                    # For now, implementing basic load assuming it's a unified HF repo or similar structure
+                    # If it's the split structure, we might need more complex logic.
+                    # Assuming the user selected the "merged" one or compatible one.
+                    from transformers import AutoModelForCausalLM
+                    self.model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype="auto", device_map="auto", trust_remote_code=True)
+                    self.processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+                    self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+
+                self.current_model_id = joycaption_model
+                
+            except Exception as e:
+                print(f"Error loading model: {e}")
+                raise e
+
+        # 2. Process Files
+        if not os.path.exists(output_path):
+            os.makedirs(output_path)
+            
+        valid_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+        files = [f for f in os.listdir(source_path) if os.path.splitext(f)[1].lower() in valid_extensions]
+        files.sort()
+        
+        generated_texts = []
+        filenames = []
+
+        # Prompt Construction
+        base_prompt = user_prompt
+        if not base_prompt:
+             # Default prompts based on caption_type
+            prompts = {
+                "Descriptive": "Write a descriptive caption for this image in a formal tone.",
+                "Descriptive": "Write a descriptive caption for this image in a formal tone.",
+                "Stable Diffusion Prompt": "Write a Stable Diffusion prompt for this image. Start with quality tags (e.g., masterpiece, best quality, 4k). Use a tag-based format separated by commas. Describe the subject, action, context, and art style.",
+            }
+            base_prompt = prompts.get(caption_type, "Write a descriptive caption for this image.")
+            
+        if caption_length and caption_length != "any":
+            base_prompt += f" Keep it {caption_length}."
+
+        print(f"Starting Generation with prompt: {base_prompt}")
+
+        import PIL.Image
+        
+        for idx, filename in enumerate(files, start=1):
+            img_path = os.path.join(source_path, filename)
+            try:
+                image = PIL.Image.open(img_path)
+                
+                # Inference
+                # Prepare inputs
+                conversation = [
+                    {
+                        "role": "user",
+                        "content": base_prompt, # Simplest form usually works with LLaVA processors if images are passed separately
+                    },
+                ]
+                
+                # Apply template
+                text_prompt = self.processor.apply_chat_template(conversation, add_generation_prompt=True)
+                
+                # Process inputs
+                inputs = self.processor(text=text_prompt, images=image, return_tensors="pt")
+                inputs = inputs.to(self.model.device)
+                
+                # Generate
+                gen_kwargs = {
+                    "max_new_tokens": max_new_tokens,
+                    "temperature": temperature,
+                    "top_p": top_p,
+                    "top_k": top_k,
+                    "do_sample": True if temperature > 0 else False,
+                }
+                
+                with torch.no_grad():
+                    output_ids = self.model.generate(**inputs, **gen_kwargs)
+                
+                # Decode
+                generated_ids_trimmed = [
+                    out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, output_ids)
+                ]
+                output_text = self.processor.batch_decode(
+                    generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+                )[0]
+                
+                # Save
+                ext = os.path.splitext(filename)[1]
+                
+                new_image_filename = f"{filename_prefix}{idx}{ext}"
+                new_text_filename = f"{filename_prefix}{idx}.txt"
+
+                save_image_path = os.path.join(output_path, new_image_filename)
+                save_text_path = os.path.join(output_path, new_text_filename)
+                
+                # Copy Image
+                shutil.copy2(img_path, save_image_path)
+
+                with open(save_text_path, "w", encoding="utf-8") as f:
+                    f.write(output_text)
+                
+                print(f"Saved: {save_text_path}")
+                generated_texts.append(output_text)
+                filenames.append(new_image_filename)
+                
+            except Exception as e:
+                print(f"Error processing {filename}: {e}")
+                traceback.print_exc()
+                generated_texts.append("")
+                filenames.append(filename)
+
+        if not cache_model:
+            del self.model
+            del self.processor
+            self.model = None
+            self.processor = None
+            torch.cuda.empty_cache()
+
+        return (generated_texts, filenames)
+
+NODE_CLASS_MAPPINGS = {
+    "TK_BatchImageLoader": TK_BatchImageLoader,
+    "TK_QwenVL_Interrogator": TK_QwenVL_Interrogator,
+    "TK_TextSaver": TK_TextSaver,
+    "TK_JoyCaption_Interrogator": TK_JoyCaption_Interrogator,
+}
+
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "TK_BatchImageLoader": "TK Batch Image Loader",
+    "TK_QwenVL_Interrogator": "TK QwenVL Interrogator",
+    "TK_TextSaver": "TK Text Saver",
+    "TK_JoyCaption_Interrogator": "TK JoyCaption Interrogator",
+}
+
