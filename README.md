@@ -91,3 +91,7 @@ This node is kept for workflow compatibility. Text saving is now **handled autom
 
 Based on the [Qwen-VL](https://github.com/QwenLM/Qwen-VL) architecture.
 Inspired by various ComfyUI community contributions.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

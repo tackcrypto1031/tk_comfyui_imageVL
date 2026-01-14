@@ -89,3 +89,7 @@ JoyCaption 的單張圖片版本。
 
 基於 [Qwen-VL](https://github.com/QwenLM/Qwen-VL) 架構開發。
 靈感來自 ComfyUI 社群的多項貢獻。
+
+## 開源協議
+
+本專案採用 MIT 開源協議 - 詳情請參閱 [LICENSE](LICENSE) 檔案。
