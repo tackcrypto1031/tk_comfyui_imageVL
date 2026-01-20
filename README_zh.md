@@ -16,6 +16,10 @@
 - **進階生成控制**：
     - 可調節 **Max New Tokens**、**解析度控制**、**Temperature** (溫度) 與 **Seed** (種子)。
     - **JoyCaption 專屬**：控制描述類型（描述性、SD Prompt）、長度與語氣。
+- **影像縮放功能**：
+    - **像素縮放 (Pixel Resize)**：根據圖片最長邊進行等比例縮放。
+    - **百萬像素縮放 (MP Resize)**：指定目標總像素量（例如 1.0MP），系統將自動調整至接近但不超過該像素量。
+    - **UI 智慧保護**：介面提供互斥開關，確保兩種縮放模式不會同時開啟。
 - **自動存檔**：自動將生成的提示詞儲存為 `.txt` 檔案，檔名與影像完全一致。
 
 ## 安裝說明
@@ -42,6 +46,8 @@
 - **source_path**：包含原始圖片的目錄。
 - **output_path**：重新命名後的圖片儲存目錄。
 - **filename_prefix**：檔案名稱前綴（預設為 `image_`）。
+- **resize_px / img_px**：開啟像素縮放（控制最長邊）。
+- **resize_mp / img_mp**：開啟百萬像素縮放（控制總像素量）。
 
 ### 2. QwenVL 反推節點 (TK_QwenVL_Interrogator)
 此節點負責分析圖片並生成描述。
@@ -68,6 +74,8 @@ JoyCaption 模型的批量處理節點，專為自然語言描述或 SD 提示�
 - **caption_length**：限制輸出長度 (極短 - 極長)。
 - **user_prompt**：使用自定義指令覆蓋內建的系統指令。
 - **cache_model**：保持模型載入狀態（建議批量處理時開啟）。
+- **resize_px / img_px**：開啟像素縮放。
+- **resize_mp / img_mp**：開啟百萬像素縮放。
 
 ### 5. TK JoyCaption 反推節點 (Single)
 JoyCaption 的單張圖片版本。

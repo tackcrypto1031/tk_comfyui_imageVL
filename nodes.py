@@ -24,6 +24,10 @@ class TK_BatchImageLoader:
                 "source_path": ("STRING", {"default": "C:/input_images"}),
                 "output_path": ("STRING", {"default": "C:/output_images"}),
                 "filename_prefix": ("STRING", {"default": "image_"}),
+                "resize_mp": ("BOOLEAN", {"default": False}),
+                "img_mp": ("FLOAT", {"default": 1, "min": 0.1, "max": 100.0, "step": 0.1}),
+                "resize_px": ("BOOLEAN", {"default": False}),
+                "img_px": ("INT", {"default": 1024, "min": 64, "max": 8192, "step": 8}),
             },
         }
 
@@ -32,7 +36,7 @@ class TK_BatchImageLoader:
     FUNCTION = "process_images"
     CATEGORY = "TK/Image"
 
-    def process_images(self, source_path, output_path, filename_prefix):
+    def process_images(self, source_path, output_path, filename_prefix, resize_mp, img_mp, resize_px, img_px):
         if not os.path.exists(source_path):
             print(f"Source path {source_path} does not exist.")
             return ([],)
@@ -54,7 +58,56 @@ class TK_BatchImageLoader:
             dst_file_path = os.path.join(output_path, new_filename)
 
             # Copy file to output directory with new name
-            shutil.copy2(src_file_path, dst_file_path)
+            if resize_mp:
+                try:
+                    img = PIL.Image.open(src_file_path)
+                    w, h = img.size
+                    target_pixels = img_mp * 1000000
+                    current_pixels = w * h
+                    
+                    if current_pixels != target_pixels:
+                        scale_factor = (target_pixels / current_pixels) ** 0.5
+                        new_w = int(w * scale_factor)
+                        new_h = int(h * scale_factor)
+                        
+                        # Ensure not larger than target
+                        while new_w * new_h > target_pixels:
+                             if new_w > new_h:
+                                 new_w -= 1
+                             else:
+                                 new_h -= 1
+                        
+                        img = img.resize((new_w, new_h), PIL.Image.LANCZOS)
+                        img.save(dst_file_path)
+                    else:
+                        shutil.copy2(src_file_path, dst_file_path)
+
+                except Exception as e:
+                    print(f"Error resizing image (MP) {src_file_path}: {e}")
+                    traceback.print_exc()
+                    shutil.copy2(src_file_path, dst_file_path)
+
+            elif resize_px:
+                try:
+                    img = PIL.Image.open(src_file_path)
+                    w, h = img.size
+                    if w >= h:
+                        new_w = img_px
+                        new_h = int(h * (img_px / w))
+                    else:
+                        new_h = img_px
+                        new_w = int(w * (img_px / h))
+                    
+                    img = img.resize((new_w, new_h), PIL.Image.LANCZOS)
+                    img.save(dst_file_path)
+                except Exception as e:
+                    print(f"Error filtering/resizing image {src_file_path}: {e}")
+                    traceback.print_exc()
+                    # Fallback to copy if resize fails
+                    shutil.copy2(src_file_path, dst_file_path)
+            else:
+                shutil.copy2(src_file_path, dst_file_path)
+            
             processed_paths.append(dst_file_path)
 
         return (processed_paths,)
@@ -442,6 +495,10 @@ class TK_JoyCaption_Interrogator:
                 "top_k": ("INT", {"default": 0, "min": 0, "max": 100}),
                 "cache_model": ("BOOLEAN", {"default": True}),
                 "filename_prefix": ("STRING", {"default": "image_"}),
+                "resize_mp": ("BOOLEAN", {"default": False}),
+                "img_mp": ("FLOAT", {"default": 1, "min": 0.1, "max": 100.0, "step": 0.1}),
+                "resize_px": ("BOOLEAN", {"default": False}),
+                "img_px": ("INT", {"default": 1024, "min": 64, "max": 8192, "step": 8}),
             },
         }
 
@@ -450,7 +507,7 @@ class TK_JoyCaption_Interrogator:
     FUNCTION = "interrogate"
     CATEGORY = "TK/JoyCaption"
 
-    def interrogate(self, source_path, output_path, joycaption_model, caption_type, caption_length, user_prompt, max_new_tokens, temperature, top_p, top_k, cache_model, filename_prefix):
+    def interrogate(self, source_path, output_path, joycaption_model, caption_type, caption_length, user_prompt, max_new_tokens, temperature, top_p, top_k, cache_model, filename_prefix, resize_mp, img_mp, resize_px, img_px):
         
         # 1. Prepare Model
         current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -540,6 +597,35 @@ class TK_JoyCaption_Interrogator:
             try:
                 image = PIL.Image.open(img_path)
                 
+                # Resize if enabled
+                if resize_mp:
+                    w, h = image.size
+                    target_pixels = img_mp * 1000000
+                    current_pixels = w * h
+                    
+                    if current_pixels != target_pixels:
+                        scale_factor = (target_pixels / current_pixels) ** 0.5
+                        new_w = int(w * scale_factor)
+                        new_h = int(h * scale_factor)
+                        
+                        # Ensure not larger than target
+                        while new_w * new_h > target_pixels:
+                             if new_w > new_h:
+                                 new_w -= 1
+                             else:
+                                 new_h -= 1
+                        image = image.resize((new_w, new_h), PIL.Image.LANCZOS)
+                        
+                elif resize_px:
+                    w, h = image.size
+                    if w >= h:
+                        new_w = img_px
+                        new_h = int(h * (img_px / w))
+                    else:
+                        new_h = img_px
+                        new_w = int(w * (img_px / h))
+                    image = image.resize((new_w, new_h), PIL.Image.LANCZOS)
+                
                 # Inference
                 # Prepare inputs
                 conversation = [
@@ -585,8 +671,11 @@ class TK_JoyCaption_Interrogator:
                 save_image_path = os.path.join(output_path, new_image_filename)
                 save_text_path = os.path.join(output_path, new_text_filename)
                 
-                # Copy Image
-                shutil.copy2(img_path, save_image_path)
+                # Copy/Save Image
+                if resize_mp or resize_px:
+                     image.save(save_image_path)
+                else:
+                     shutil.copy2(img_path, save_image_path)
 
                 with open(save_text_path, "w", encoding="utf-8") as f:
                     f.write(output_text)

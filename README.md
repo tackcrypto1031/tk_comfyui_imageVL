@@ -18,6 +18,10 @@ A powerful set of ComfyUI custom nodes designed for batch image processing and a
 - **Advanced Generation Control**:
     - Adjustable **Max New Tokens**, **Resolution Control**, **Temperature**, and **Seed**.
     - **JoyCaption specific**: Control caption type ('Descriptive', 'SD Prompt'), length, and tone.
+- **Image Resizing Options**: 
+    - **Pixel Resize**: Scale based on the longest edge.
+    - **Megapixel (MP) Resize**: Scale to a target total pixel count (e.g., 1.0MP).
+    - **UI Protection**: Smart mutually exclusive toggles in the interface.
 - **Auto-Saving**: Automatically saves the generated captions as `.txt` files matching the image filenames.
 
 ## Installation
@@ -44,6 +48,8 @@ This node handles the input images.
 - **source_path**: Directory containing your original images.
 - **output_path**: Directory where renamed images will be saved.
 - **filename_prefix**: Prefix for the renamed files (default: `image_`).
+- **resize_px / img_px**: Toggle pixel-based resizing (longest edge).
+- **resize_mp / img_mp**: Toggle megapixel-based resizing (total pixels).
 
 ### 2. QwenVL Interrogator (TK_QwenVL_Interrogator)
 This node analyzes the images and generates descriptions.
@@ -70,6 +76,8 @@ Batch processing node for JoyCaption models, designed for natural language capti
 - **caption_length**: constrain the output length (very, short - very long).
 - **user_prompt**: Override the internal system prompt with your own instruction.
 - **cache_model**: Keep model loaded (recommended for batch).
+- **resize_px / img_px**: Toggle pixel-based resizing.
+- **resize_mp / img_mp**: Toggle megapixel-based resizing.
 
 ### 5. TK JoyCaption Interrogator (Single)
 Single image version of JoyCaption.
