@@ -75,7 +75,8 @@ JoyCaption 模型的批量處理節點，專為自然語言描述或 SD 提示�
 - **user_prompt**：使用自定義指令覆蓋內建的系統指令。
 - **cache_model**：保持模型載入狀態（建議批量處理時開啟）。
 - **resize_px / img_px**：開啟像素縮放。
-- **resize_mp / img_mp**：開啟百萬像素縮放。
+- **resize_mp / img_mp**: 開啟百萬像素縮放。
+- **enable_captioning**: 開啟/關閉反推生成。若關閉，此節點僅作為批量圖片縮放工具使用。
 
 ### 5. TK JoyCaption 反推節點 (Single)
 JoyCaption 的單張圖片版本。

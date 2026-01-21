@@ -78,6 +78,7 @@ Batch processing node for JoyCaption models, designed for natural language capti
 - **cache_model**: Keep model loaded (recommended for batch).
 - **resize_px / img_px**: Toggle pixel-based resizing.
 - **resize_mp / img_mp**: Toggle megapixel-based resizing.
+- **enable_captioning**: Toggle to enable/disable caption generation. If disabled, the node acts as a resize-only batch loader.
 
 ### 5. TK JoyCaption Interrogator (Single)
 Single image version of JoyCaption.

@@ -499,6 +499,7 @@ class TK_JoyCaption_Interrogator:
                 "img_mp": ("FLOAT", {"default": 1, "min": 0.1, "max": 100.0, "step": 0.1}),
                 "resize_px": ("BOOLEAN", {"default": False}),
                 "img_px": ("INT", {"default": 1024, "min": 64, "max": 8192, "step": 8}),
+                "enable_captioning": ("BOOLEAN", {"default": True}),
             },
         }
 
@@ -507,61 +508,62 @@ class TK_JoyCaption_Interrogator:
     FUNCTION = "interrogate"
     CATEGORY = "TK/JoyCaption"
 
-    def interrogate(self, source_path, output_path, joycaption_model, caption_type, caption_length, user_prompt, max_new_tokens, temperature, top_p, top_k, cache_model, filename_prefix, resize_mp, img_mp, resize_px, img_px):
+    def interrogate(self, source_path, output_path, joycaption_model, caption_type, caption_length, user_prompt, max_new_tokens, temperature, top_p, top_k, cache_model, filename_prefix, resize_mp, img_mp, resize_px, img_px, enable_captioning):
         
         # 1. Prepare Model
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        models_dir = os.path.join(current_dir, "models")
-        model_folder_name = joycaption_model.replace("/", "__")
-        model_path = os.path.join(models_dir, model_folder_name)
+        if enable_captioning:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            models_dir = os.path.join(current_dir, "models")
+            model_folder_name = joycaption_model.replace("/", "__")
+            model_path = os.path.join(models_dir, model_folder_name)
 
-        if not os.path.exists(model_path):
-            print(f"Model {joycaption_model} not found at {model_path}. Downloading...")
-            try:
-                from huggingface_hub import snapshot_download
-                snapshot_download(repo_id=joycaption_model, local_dir=model_path)
-                print(f"Model downloaded to {model_path}")
-            except Exception as e:
-                print(f"Failed to download model: {e}")
-                raise e
+            if not os.path.exists(model_path):
+                print(f"Model {joycaption_model} not found at {model_path}. Downloading...")
+                try:
+                    from huggingface_hub import snapshot_download
+                    snapshot_download(repo_id=joycaption_model, local_dir=model_path)
+                    print(f"Model downloaded to {model_path}")
+                except Exception as e:
+                    print(f"Failed to download model: {e}")
+                    raise e
 
-        # Load Model (Singleton logic within instance for now, or global cache if needed across nodes)
-        if self.model is None or self.current_model_id != joycaption_model:
-            print(f"Loading model {joycaption_model}...")
-            
-            try:
-                # Import here to avoid global dependency issues if unused
-                from transformers import AutoModel, AutoProcessor, AutoTokenizer, AutoModelForCausalLM
+            # Load Model (Singleton logic within instance for now, or global cache if needed across nodes)
+            if self.model is None or self.current_model_id != joycaption_model:
+                print(f"Loading model {joycaption_model}...")
                 
-                # Check for Beta One (LLaVA based) vs Pre-Alpha (Custom Adapter)
-                if "beta-one" in joycaption_model:
-                    # LLaVA style loading - Use AutoModelForVision2Seq for VLMs
-                    from transformers import AutoModelForVision2Seq
-                    self.model = AutoModelForVision2Seq.from_pretrained(
-                        model_path, 
-                        torch_dtype="auto", 
-                        device_map="auto",
-                        trust_remote_code=True
-                    )
-                    self.processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
-                    self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-                    self.image_adapter = None # Integrated
-                else:
-                    # Pre-Alpha / Custom Adapter Logic
-                    # This path might require specific separate loading of SigLIP + Adapter + Llama
-                    # For now, implementing basic load assuming it's a unified HF repo or similar structure
-                    # If it's the split structure, we might need more complex logic.
-                    # Assuming the user selected the "merged" one or compatible one.
-                    from transformers import AutoModelForCausalLM
-                    self.model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype="auto", device_map="auto", trust_remote_code=True)
-                    self.processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
-                    self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+                try:
+                    # Import here to avoid global dependency issues if unused
+                    from transformers import AutoModel, AutoProcessor, AutoTokenizer, AutoModelForCausalLM
+                    
+                    # Check for Beta One (LLaVA based) vs Pre-Alpha (Custom Adapter)
+                    if "beta-one" in joycaption_model:
+                        # LLaVA style loading - Use AutoModelForVision2Seq for VLMs
+                        from transformers import AutoModelForVision2Seq
+                        self.model = AutoModelForVision2Seq.from_pretrained(
+                            model_path, 
+                            torch_dtype="auto", 
+                            device_map="auto",
+                            trust_remote_code=True
+                        )
+                        self.processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+                        self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+                        self.image_adapter = None # Integrated
+                    else:
+                        # Pre-Alpha / Custom Adapter Logic
+                        # This path might require specific separate loading of SigLIP + Adapter + Llama
+                        # For now, implementing basic load assuming it's a unified HF repo or similar structure
+                        # If it's the split structure, we might need more complex logic.
+                        # Assuming the user selected the "merged" one or compatible one.
+                        from transformers import AutoModelForCausalLM
+                        self.model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype="auto", device_map="auto", trust_remote_code=True)
+                        self.processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+                        self.tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
-                self.current_model_id = joycaption_model
-                
-            except Exception as e:
-                print(f"Error loading model: {e}")
-                raise e
+                    self.current_model_id = joycaption_model
+                    
+                except Exception as e:
+                    print(f"Error loading model: {e}")
+                    raise e
 
         # 2. Process Files
         if not os.path.exists(output_path):
@@ -575,20 +577,21 @@ class TK_JoyCaption_Interrogator:
         filenames = []
 
         # Prompt Construction
-        base_prompt = user_prompt
-        if not base_prompt:
-             # Default prompts based on caption_type
-            prompts = {
-                "Descriptive": "Write a descriptive caption for this image in a formal tone.",
-                "Descriptive": "Write a descriptive caption for this image in a formal tone.",
-                "Stable Diffusion Prompt": "Write a Stable Diffusion prompt for this image. Start with quality tags (e.g., masterpiece, best quality, 4k). Use a tag-based format separated by commas. Describe the subject, action, context, and art style.",
-            }
-            base_prompt = prompts.get(caption_type, "Write a descriptive caption for this image.")
-            
-        if caption_length and caption_length != "any":
-            base_prompt += f" Keep it {caption_length}."
+        base_prompt = ""
+        if enable_captioning:
+            base_prompt = user_prompt
+            if not base_prompt:
+                 # Default prompts based on caption_type
+                prompts = {
+                    "Descriptive": "Write a descriptive caption for this image in a formal tone.",
+                    "Stable Diffusion Prompt": "Write a Stable Diffusion prompt for this image. Start with quality tags (e.g., masterpiece, best quality, 4k). Use a tag-based format separated by commas. Describe the subject, action, context, and art style.",
+                }
+                base_prompt = prompts.get(caption_type, "Write a descriptive caption for this image.")
+                
+            if caption_length and caption_length != "any":
+                base_prompt += f" Keep it {caption_length}."
 
-        print(f"Starting Generation with prompt: {base_prompt}")
+            print(f"Starting Generation with prompt: {base_prompt}")
 
         import PIL.Image
         
@@ -627,40 +630,42 @@ class TK_JoyCaption_Interrogator:
                     image = image.resize((new_w, new_h), PIL.Image.LANCZOS)
                 
                 # Inference
-                # Prepare inputs
-                conversation = [
-                    {
-                        "role": "user",
-                        "content": base_prompt, # Simplest form usually works with LLaVA processors if images are passed separately
-                    },
-                ]
-                
-                # Apply template
-                text_prompt = self.processor.apply_chat_template(conversation, add_generation_prompt=True)
-                
-                # Process inputs
-                inputs = self.processor(text=text_prompt, images=image, return_tensors="pt")
-                inputs = inputs.to(self.model.device)
-                
-                # Generate
-                gen_kwargs = {
-                    "max_new_tokens": max_new_tokens,
-                    "temperature": temperature,
-                    "top_p": top_p,
-                    "top_k": top_k,
-                    "do_sample": True if temperature > 0 else False,
-                }
-                
-                with torch.no_grad():
-                    output_ids = self.model.generate(**inputs, **gen_kwargs)
-                
-                # Decode
-                generated_ids_trimmed = [
-                    out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, output_ids)
-                ]
-                output_text = self.processor.batch_decode(
-                    generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
-                )[0]
+                output_text = ""
+                if enable_captioning:
+                    # Prepare inputs
+                    conversation = [
+                        {
+                            "role": "user",
+                            "content": base_prompt, # Simplest form usually works with LLaVA processors if images are passed separately
+                        },
+                    ]
+                    
+                    # Apply template
+                    text_prompt = self.processor.apply_chat_template(conversation, add_generation_prompt=True)
+                    
+                    # Process inputs
+                    inputs = self.processor(text=text_prompt, images=image, return_tensors="pt")
+                    inputs = inputs.to(self.model.device)
+                    
+                    # Generate
+                    gen_kwargs = {
+                        "max_new_tokens": max_new_tokens,
+                        "temperature": temperature,
+                        "top_p": top_p,
+                        "top_k": top_k,
+                        "do_sample": True if temperature > 0 else False,
+                    }
+                    
+                    with torch.no_grad():
+                        output_ids = self.model.generate(**inputs, **gen_kwargs)
+                    
+                    # Decode
+                    generated_ids_trimmed = [
+                        out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, output_ids)
+                    ]
+                    output_text = self.processor.batch_decode(
+                        generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+                    )[0]
                 
                 # Save
                 ext = os.path.splitext(filename)[1]
@@ -677,10 +682,11 @@ class TK_JoyCaption_Interrogator:
                 else:
                      shutil.copy2(img_path, save_image_path)
 
-                with open(save_text_path, "w", encoding="utf-8") as f:
-                    f.write(output_text)
+                if enable_captioning:
+                    with open(save_text_path, "w", encoding="utf-8") as f:
+                        f.write(output_text)
+                    print(f"Saved: {save_text_path}")
                 
-                print(f"Saved: {save_text_path}")
                 generated_texts.append(output_text)
                 filenames.append(new_image_filename)
                 
@@ -690,7 +696,7 @@ class TK_JoyCaption_Interrogator:
                 generated_texts.append("")
                 filenames.append(filename)
 
-        if not cache_model:
+        if enable_captioning and not cache_model:
             del self.model
             del self.processor
             self.model = None
