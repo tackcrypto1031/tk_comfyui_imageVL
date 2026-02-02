@@ -859,6 +859,204 @@ class TK_JoyCaption_Interrogator_Single:
 
         return (output_text,)
 
+
+class TK_WD14_Tagger:
+    def __init__(self):
+        self.model = None
+        self.tags_df = None
+        self.current_model = None
+        self.session = None
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "source_path": ("STRING", {"default": "C:/input_images"}),
+                "output_path": ("STRING", {"default": "C:/output_images"}),
+                "model": ([
+                    "SmilingWolf/wd-v1-4-moat-tagger-v2",
+                    "SmilingWolf/wd-v1-4-convnextv2-tagger-v2",
+                    "SmilingWolf/wd-v1-4-swinv2-tagger-v2",
+                    "SmilingWolf/wd-v1-4-vit-tagger-v2",
+                    "SmilingWolf/wd-v1-4-convnext-tagger-v2",
+                    "SmilingWolf/wd-eva02-large-tagger-v3",
+                    "SmilingWolf/wd-vit-tagger-v3",
+                    "SmilingWolf/wd-swinv2-tagger-v3",
+                    "SmilingWolf/wd-convnext-tagger-v3",
+                ], {"default": "SmilingWolf/wd-v1-4-convnextv2-tagger-v2"}),
+                "threshold": ("FLOAT", {"default": 0.35, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "character_threshold": ("FLOAT", {"default": 0.85, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "exclude_tags": ("STRING", {"default": "", "multiline": True}),
+                "filename_prefix": ("STRING", {"default": "image_"}),
+            },
+        }
+
+    RETURN_TYPES = ("LIST", "LIST")
+    RETURN_NAMES = ("tags", "filenames")
+    FUNCTION = "tag_images"
+    CATEGORY = "TK/WD14"
+
+    def tag_images(self, source_path, output_path, model, threshold, character_threshold, exclude_tags, filename_prefix):
+        # Imports within function to avoid hard dependency at load time
+        try:
+            import onnxruntime as ort
+            import pandas as pd
+        except ImportError:
+            raise ImportError("Please install 'onnxruntime' and 'pandas' to use the WD14 Tagger node.")
+
+        # 1. Load Model
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        models_dir = os.path.join(current_dir, "models")
+        model_name_safe = model.replace("/", "__")
+        model_path = os.path.join(models_dir, model_name_safe)
+
+        if not os.path.exists(model_path):
+            print(f"Downloading model {model} to {model_path}...")
+            try:
+                snapshot_download(repo_id=model, local_dir=model_path)
+            except Exception as e:
+                print(f"Error downloading model: {e}")
+                raise e
+
+        if self.session is None or self.current_model != model:
+            print(f"Loading model {model}...")
+            try:
+                # Find onnx file (sometimes named differently)
+                model_files = [f for f in os.listdir(model_path) if f.endswith(".onnx")]
+                if not model_files:
+                     raise FileNotFoundError(f"No .onnx file found in {model_path}")
+                model_file = model_files[0]
+                
+                # Find csv file
+                csv_files = [f for f in os.listdir(model_path) if f.endswith(".csv")]
+                if not csv_files:
+                     raise FileNotFoundError(f"No .csv file found in {model_path}")
+                csv_file = csv_files[0]
+                
+                providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+                if 'CUDAExecutionProvider' not in ort.get_available_providers():
+                     providers = ['CPUExecutionProvider']
+
+                self.session = ort.InferenceSession(os.path.join(model_path, model_file), providers=providers)
+                self.tags_df = pd.read_csv(os.path.join(model_path, csv_file))
+                self.current_model = model
+            except Exception as e:
+                print(f"Error loading model: {e}")
+                raise e
+
+        # 2. Process Files
+        if not os.path.exists(output_path):
+            os.makedirs(output_path)
+
+        valid_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+        files = [f for f in os.listdir(source_path) if os.path.splitext(f)[1].lower() in valid_extensions]
+        files.sort()
+
+        generated_tags = []
+        filenames = []
+        exclude_list = [t.strip().lower() for t in exclude_tags.split(",") if t.strip()]
+
+        for idx, filename in enumerate(files, start=1):
+            img_path = os.path.join(source_path, filename)
+            try:
+                img = PIL.Image.open(img_path).convert("RGBA")
+                
+                # Preprocess: Resize fit to 448x448, paste on white bg
+                target_size = 448 # WD14 standard
+                
+                bg = PIL.Image.new("RGB", (target_size, target_size), (255, 255, 255))
+                img_ratio = img.width / img.height
+                
+                if img_ratio > 1:
+                    new_w = target_size
+                    new_h = int(target_size / img_ratio)
+                else:
+                    new_h = target_size
+                    new_w = int(target_size * img_ratio)
+                    
+                img_resized = img.resize((new_w, new_h), PIL.Image.LANCZOS)
+                
+                # Paste center
+                paste_x = (target_size - new_w) // 2
+                paste_y = (target_size - new_h) // 2
+                
+                # Composite with white background to handle alpha
+                input_img = PIL.Image.new("RGB", (target_size, target_size), (255, 255, 255))
+                input_img.paste(img_resized, (paste_x, paste_y), img_resized)
+
+                # Prepare tensor
+                image_data = np.array(input_img).astype(np.float32)
+                image_data = image_data[:, :, ::-1] # RGB -> BGR
+                image_data = np.expand_dims(image_data, 0)
+                
+                # Run inference
+                input_name = self.session.get_inputs()[0].name
+                label_name = self.session.get_outputs()[0].name
+                probs = self.session.run([label_name], {input_name: image_data})[0][0]
+                
+                # Extract tags
+                tags = []
+                # Check CSV columns. Some versions have different headers.
+                # Usually: tag_id, name, category, count
+                # We need to access by index to be safe or check headers.
+                # Assuming standard format: iloc[i] -> [id, name, category, count]
+                
+                for i, prob in enumerate(probs):
+                    # Map index to tag info
+                    if i >= len(self.tags_df): break
+                    
+                    row = self.tags_df.iloc[i]
+                    # Adjust column index if needed. usually name=1, category=2.
+                    # Some CSVs might be name, category, ...
+                    # Let's try to find column by name if possible, else fallback.
+                    if 'name' in row.index and 'category' in row.index:
+                        tag_name = row['name']
+                        category = row['category']
+                    else:
+                        # Fallback to positional
+                        tag_name = row[1]
+                        category = row[2]
+
+                    # Standard WD14 categories:
+                    # 0: General
+                    # 4: Character
+                    # 9: Rating
+                    
+                    if category == 9: continue # Skip ratings
+                    
+                    curr_threshold = character_threshold if category == 4 else threshold
+                    
+                    if prob >= curr_threshold:
+                        if tag_name.replace("_", " ").lower() not in exclude_list:
+                            tags.append(tag_name.replace("_", " "))
+                            
+                tag_string = ", ".join(tags)
+                
+                # Save
+                ext = os.path.splitext(filename)[1]
+                new_image_filename = f"{filename_prefix}{idx}{ext}"
+                new_text_filename = f"{filename_prefix}{idx}.txt"
+                
+                save_image_path = os.path.join(output_path, new_image_filename)
+                save_text_path = os.path.join(output_path, new_text_filename)
+                
+                shutil.copy2(img_path, save_image_path)
+                with open(save_text_path, "w", encoding="utf-8") as f:
+                    f.write(tag_string)
+                    
+                generated_tags.append(tag_string)
+                filenames.append(new_image_filename)
+                
+                print(f"Processed: {filename} -> {len(tags)} tags")
+                
+            except Exception as e:
+                print(f"Error processing {filename}: {e}")
+                traceback.print_exc()
+                generated_tags.append("")
+                filenames.append(filename)
+                
+        return (generated_tags, filenames)
+
 NODE_CLASS_MAPPINGS = {
     "TK_BatchImageLoader": TK_BatchImageLoader,
     "TK_QwenVL_Interrogator": TK_QwenVL_Interrogator,
@@ -866,6 +1064,7 @@ NODE_CLASS_MAPPINGS = {
     "TK_JoyCaption_Interrogator": TK_JoyCaption_Interrogator,
     "TK_QwenVL_Interrogator_Single": TK_QwenVL_Interrogator_Single,
     "TK_JoyCaption_Interrogator_Single": TK_JoyCaption_Interrogator_Single,
+    "TK_WD14_Tagger": TK_WD14_Tagger,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -875,5 +1074,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "TK_JoyCaption_Interrogator": "TK JoyCaption Interrogator",
     "TK_QwenVL_Interrogator_Single": "TK QwenVL Interrogator (Single)",
     "TK_JoyCaption_Interrogator_Single": "TK JoyCaption Interrogator (Single)",
+    "TK_WD14_Tagger": "TK WD14 Tagger",
 }
 
