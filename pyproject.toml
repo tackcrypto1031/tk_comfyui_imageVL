@@ -1,0 +1,28 @@
+[project]
+name = "tk_comfyui_imageVL"
+description = "Batch image processing and Vision-Language Model (VLM) interrogation nodes for ComfyUI, supporting Qwen-VL, JoyCaption, and WD14 Tagger."
+version = "1.0.0"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = [
+    "transformers>=4.45.0",
+    "qwen-vl-utils",
+    "accelerate",
+    "huggingface-hub",
+    "torch",
+    "torchvision",
+    "pillow",
+    "sentencepiece",
+    "protobuf",
+    "pandas",
+    "onnxruntime; sys_platform != 'darwin'",
+    "onnxruntime-silicon; sys_platform == 'darwin'",
+]
+
+[project.urls]
+Repository = "https://github.com/tackcrypto1031/tk_comfyui_imageVL"
+
+[tool.comfy]
+PublisherId = "tackcrypto1031"
+DisplayName = "TK ImageVL - Batch Image & VLM Tools"
+Icon = ""
